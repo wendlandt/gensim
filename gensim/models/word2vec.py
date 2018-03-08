@@ -112,6 +112,7 @@ import threading
 import itertools
 import warnings
 
+
 from gensim.utils import keep_vocab_item, call_on_class_only
 from gensim.models.keyedvectors import Vocab, Word2VecKeyedVectors
 from gensim.models.base_any2vec import BaseWordEmbeddingsModel
@@ -511,6 +512,8 @@ class Word2Vec(BaseWordEmbeddingsModel):
 
         """
 
+        print('*****Custom word2vec code*****')
+
         self.callbacks = callbacks
         self.load = call_on_class_only
 
@@ -526,6 +529,19 @@ class Word2Vec(BaseWordEmbeddingsModel):
             hs=hs, negative=negative, cbow_mean=cbow_mean, min_alpha=min_alpha, compute_loss=compute_loss,
             fast_version=FAST_VERSION)
 
+    def forget_word(self, word):
+        """
+        Reset the weight for one word (already in the vocabulary)
+        """
+        logger.info("Forgetting word "+word)
+        word_index = self.wv.index2word.index(word)
+        self.wv.vectors[word_index] = self.trainables.seeded_vector(word+str(self.trainables.seed),self.wv.vector_size)
+
+        # randomize the remaining words
+        #for i in xrange(len(wv.vectors), len(wv.vocab)):
+        #    # construct deterministic seed from word AND seed argument
+        #    newvectors[i - len(wv.vectors)] = self.seeded_vector(wv.index2word[i] + str(self.seed), wv.vector_size)
+    
     def _do_train_job(self, sentences, alpha, inits):
         """
         Train a single batch of sentences. Return 2-tuple `(effective word count after
@@ -1353,7 +1369,7 @@ class Word2VecVocab(utils.SaveLoad):
             while stack:
                 node, codes, points = stack.pop()
                 if node.index < len(wv.vocab):
-                    # leaf node => store its path from the root
+              # leaf node => store its path from the root
                     node.code, node.point = codes, points
                     max_depth = max(len(codes), max_depth)
                 else:
