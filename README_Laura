@@ -1,1 +1,7 @@
 sudo /local/anaconda3/bin/python3.6 setup.py install
+
+if you don't want to install it, but use the un-installed version, then add this in your python script:
+import sys
+sys.path.insert(0,'/home/wenlaura/gensim/')
+import gensim
+print(gensim.__file__)

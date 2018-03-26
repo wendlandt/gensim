@@ -181,10 +181,18 @@ except ImportError:
         will use the optimized version from word2vec_inner instead.
         """
         result = 0
-        for sentence in sentences:
-            word_vocabs = [model.wv.vocab[w] for w in sentence if w in model.wv.vocab and
+        for sentenceIndex in range(len(sentences)):
+            sentence = sentences[sentenceIndex]
+            if not model.contextOnly:
+                word_vocabs = [model.wv.vocab[w] for w in sentence if w in model.wv.vocab and
                            model.wv.vocab[w].sample_int > model.random.rand() * 2 ** 32]
+            else: #contextOnly
+                print('***Only training on one context')
+                pos = model.context_indices[sentenceIndex]
+                word_vocabs = [(pos,model.wv.vocab[sentence[pos]])]
+            
             for pos, word in enumerate(word_vocabs):
+                print(pos,word,sentence)
                 reduced_window = model.random.randint(model.window)  # `b` in the original word2vec code
                 start = max(0, pos - model.window + reduced_window)
                 window_pos = enumerate(word_vocabs[start:(pos + model.window + 1 - reduced_window)], start)
@@ -426,7 +434,7 @@ class Word2Vec(BaseWordEmbeddingsModel):
     def __init__(self, sentences=None, size=100, alpha=0.025, window=5, min_count=5,
                  max_vocab_size=None, sample=1e-3, seed=1, workers=3, min_alpha=0.0001,
                  sg=0, hs=0, negative=5, cbow_mean=1, hashfxn=hash, iter=5, null_word=0,
-                 trim_rule=None, sorted_vocab=1, batch_words=MAX_WORDS_IN_BATCH, compute_loss=False, callbacks=()):
+                 trim_rule=None, sorted_vocab=1, batch_words=MAX_WORDS_IN_BATCH, compute_loss=False, contextOnly=False, context_indices = [], callbacks=()):
         """
         Initialize the model from an iterable of `sentences`. Each sentence is a
         list of words (unicode strings) that will be used for training.
@@ -516,6 +524,8 @@ class Word2Vec(BaseWordEmbeddingsModel):
 
         self.callbacks = callbacks
         self.load = call_on_class_only
+        self.contextOnly = contextOnly
+        self.context_indices = context_indices
 
         self.wv = Word2VecKeyedVectors(size)
         self.vocabulary = Word2VecVocab(
@@ -550,8 +560,10 @@ class Word2Vec(BaseWordEmbeddingsModel):
         work, neu1 = inits
         tally = 0
         if self.sg:
+            print('***Custom word2vec: skipgram')
             tally += train_batch_sg(self, sentences, alpha, work, self.compute_loss)
         else:
+            print('***Custom word2vec: CBOW')
             tally += train_batch_cbow(self, sentences, alpha, work, neu1, self.compute_loss)
         return tally, self._raw_word_count(sentences)
 
