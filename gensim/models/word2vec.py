@@ -184,15 +184,53 @@ except ImportError:
         for sentenceIndex in range(len(sentences)):
             sentence = sentences[sentenceIndex]
             if not model.contextOnly:
-                word_vocabs = [model.wv.vocab[w] for w in sentence if w in model.wv.vocab and
-                           model.wv.vocab[w].sample_int > model.random.rand() * 2 ** 32]
-            else: #contextOnly
-                print('***Only training on one context')
-                pos = model.context_indices[sentenceIndex]
-                word_vocabs = [(pos,model.wv.vocab[sentence[pos]])]
+                #Unchanged
+                word_vocabs = [model.wv.vocab[w] for w in sentence if w in model.wv.vocab and model.wv.vocab[w].sample_int > model.random.rand() * 2 ** 32]
             
-            for pos, word in enumerate(word_vocabs):
-                print(pos,word,sentence)
+                for pos, word in enumerate(word_vocabs):
+                    reduced_window = model.random.randint(model.window)  # `b` in the original word2vec code
+                    start = max(0, pos - model.window + reduced_window)
+                    window_pos = enumerate(word_vocabs[start:(pos + model.window + 1 - reduced_window)], start)
+                    word2_indices = [word2.index for pos2, word2 in window_pos if (word2 is not None and pos2 != pos)]
+                    l1 = np_sum(model.wv.syn0[word2_indices], axis=0)  # 1 x vector_size
+                    if word2_indices and model.cbow_mean:
+                        l1 /= len(word2_indices)
+                    train_cbow_pair(model, word, word2_indices, l1, alpha, compute_loss=compute_loss)
+                result += len(word_vocabs)
+            
+            else: #contextOnly
+                #print('***Only training on one context')
+                #print('sentence',sentence)
+                target_word = sentence[0]
+                left_context = sentence[1:model.window+1]
+                right_context = sentence[model.window+1:]
+                if len(left_context) != model.window:
+                    print('Error: left_context not right length')
+                    print(sentence)
+                if len(right_context) != model.window:
+                    print('Error: right context not right length')
+                    print(sentence)
+                #print('target_word',target_word)
+                #print('left_context',left_context)
+                #print('right_context',right_context)
+                oow = 'OUTOFWINDOW'
+                sentence = [i for i in left_context if i != oow] + [target_word] + [i for i in right_context if i != oow]
+                #print('sentence',sentence)
+                pos = len([i for i in left_context if i != oow])
+                #print('pos',pos)
+
+                word_vocabs = []
+                for w in sentence:
+                    if w in model.wv.vocab and model.wv.vocab[w].sample_int > model.random.rand() * 2 ** 32:
+                        word_vocabs.append(model.wv.vocab[w])
+                    else:
+                        word_vocabs.append(None)
+                word = word_vocabs[int(pos)]
+                if not word:
+                    #print('word is None - continuing')
+                    continue
+
+                #print(pos,word,sentence)
                 reduced_window = model.random.randint(model.window)  # `b` in the original word2vec code
                 start = max(0, pos - model.window + reduced_window)
                 window_pos = enumerate(word_vocabs[start:(pos + model.window + 1 - reduced_window)], start)
@@ -201,7 +239,8 @@ except ImportError:
                 if word2_indices and model.cbow_mean:
                     l1 /= len(word2_indices)
                 train_cbow_pair(model, word, word2_indices, l1, alpha, compute_loss=compute_loss)
-            result += len(word_vocabs)
+                result += 1
+        
         return result
 
     def score_sentence_sg(model, sentence, work=None):
@@ -434,7 +473,7 @@ class Word2Vec(BaseWordEmbeddingsModel):
     def __init__(self, sentences=None, size=100, alpha=0.025, window=5, min_count=5,
                  max_vocab_size=None, sample=1e-3, seed=1, workers=3, min_alpha=0.0001,
                  sg=0, hs=0, negative=5, cbow_mean=1, hashfxn=hash, iter=5, null_word=0,
-                 trim_rule=None, sorted_vocab=1, batch_words=MAX_WORDS_IN_BATCH, compute_loss=False, contextOnly=False, context_indices = [], callbacks=()):
+                 trim_rule=None, sorted_vocab=1, batch_words=MAX_WORDS_IN_BATCH, compute_loss=False, contextOnly=False, callbacks=()):
         """
         Initialize the model from an iterable of `sentences`. Each sentence is a
         list of words (unicode strings) that will be used for training.
@@ -521,11 +560,12 @@ class Word2Vec(BaseWordEmbeddingsModel):
         """
 
         print('*****Custom word2vec code*****')
+        #print('sentences inside model init')
+        #print(sentences)
 
         self.callbacks = callbacks
         self.load = call_on_class_only
         self.contextOnly = contextOnly
-        self.context_indices = context_indices
 
         self.wv = Word2VecKeyedVectors(size)
         self.vocabulary = Word2VecVocab(
