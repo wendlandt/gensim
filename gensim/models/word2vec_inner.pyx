@@ -401,10 +401,12 @@ def train_batch_sg(model, sentences, alpha, _work, compute_loss):
 
 
 def train_batch_cbow(model, sentences, alpha, _work, _neu1, compute_loss):
+    #print('Entering optimized train_batch_cbow')
     cdef int hs = model.hs
     cdef int negative = model.negative
     cdef int sample = (model.vocabulary.sample != 0)
     cdef int cbow_mean = model.cbow_mean
+    cdef int contextOnly = (1 if model.contextOnly == True else 0)
 
     cdef int _compute_loss = (1 if compute_loss == True else 0)
     cdef REAL_t _running_training_loss = model.running_training_loss
@@ -419,11 +421,12 @@ def train_batch_cbow(model, sentences, alpha, _work, _neu1, compute_loss):
     cdef np.uint32_t indexes[MAX_SENTENCE_LEN]
     cdef np.uint32_t reduced_windows[MAX_SENTENCE_LEN]
     cdef int sentence_idx[MAX_SENTENCE_LEN + 1]
+    cdef int context_pos[MAX_SENTENCE_LEN + 1]
     cdef int window = model.window
 
     cdef int i, j, k
     cdef int effective_words = 0, effective_sentences = 0
-    cdef int sent_idx, idx_start, idx_end
+    cdef int sent_idx, idx_start, idx_end, left_count
 
     # For hierarchical softmax
     cdef REAL_t *syn1
@@ -457,21 +460,88 @@ def train_batch_cbow(model, sentences, alpha, _work, _neu1, compute_loss):
     for sent in sentences:
         if not sent:
             continue  # ignore empty sentences; leave effective_sentences unchanged
-        for token in sent:
-            word = vlookup[token] if token in vlookup else None
-            if word is None:
-                continue  # leaving `effective_words` unchanged = shortening the sentence = expanding the window
-            if sample and word.sample_int < random_int32(&next_random):
-                continue
-            indexes[effective_words] = word.index
-            if hs:
-                codelens[effective_words] = <int>len(word.code)
-                codes[effective_words] = <np.uint8_t *>np.PyArray_DATA(word.code)
-                points[effective_words] = <np.uint32_t *>np.PyArray_DATA(word.point)
-            effective_words += 1
-            if effective_words == MAX_SENTENCE_LEN:
-                break  # TODO: log warning, tally overflow?
+        if contextOnly:
+            #print('original sentence:',sent)
 
+            oow = 'OUTOFWINDOW'
+            #First things first - do we want to use this target word?
+            target = sent[0]
+            target_word = vlookup[target] if target in vlookup else None
+            if target_word is None:
+                continue
+            if sample and target_word.sample_int < random_int32(&next_random):
+                continue
+            #Ok, we want to use this word now
+            
+            #First look at left context
+            left_count = 0
+            for token in sent[1:window+1]:
+                if token == oow:
+                    continue
+                word = vlookup[token] if token in vlookup else None
+                if word is None:
+                    continue
+                if sample and word.sample_int < random_int32(&next_random):
+                    continue
+                #print(token)
+                left_count += 1 #Alright, now we'll use this word
+                indexes[effective_words] = word.index
+                if hs:
+                    codelens[effective_words] = <int>len(word.code)
+                    codes[effective_words] = <np.uint8_t *>np.PyArray_DATA(word.code)
+                    points[effective_words] = <np.uint32_t *>np.PyArray_DATA(word.point)
+                effective_words += 1
+
+            #Record position of target word
+            context_pos[effective_sentences] = left_count
+            
+            #Now target word
+            #print(target)
+            indexes[effective_words] = target_word.index
+            if hs:
+                codelens[effective_words] = <int>len(target_word.code)
+                codes[effective_words] = <np.uint8_t *>np.PyArray_DATA(target_word.code)
+                points[effective_words] = <np.uint32_t *>np.PyArray_DATA(target_word.point)
+            effective_words += 1
+
+            #Now right context
+            for token in sent[window+1:]:
+                if token == oow:
+                    continue
+                word = vlookup[token] if token in vlookup else None
+                if word is None:
+                    continue
+                if sample and word.sample_int < random_int32(&next_random):
+                    continue
+                #print(token)
+                #Alright, now we'll use this word
+                indexes[effective_words] = word.index
+                if hs:
+                    codelens[effective_words] = <int>len(word.code)
+                    codes[effective_words] = <np.uint8_t *>np.PyArray_DATA(word.code)
+                    points[effective_words] = <np.uint32_t *>np.PyArray_DATA(word.point)
+                effective_words += 1
+
+            #print('position:',left_count)
+
+        else: #not contextOnly
+            #Unchanged
+            for token in sent:
+                word = vlookup[token] if token in vlookup else None
+                if word is None:
+                    continue  # leaving `effective_words` unchanged = shortening the sentence = expanding the window
+                if sample and word.sample_int < random_int32(&next_random):
+                    continue
+                indexes[effective_words] = word.index
+                if hs:
+                    codelens[effective_words] = <int>len(word.code)
+                    codes[effective_words] = <np.uint8_t *>np.PyArray_DATA(word.code)
+                    points[effective_words] = <np.uint32_t *>np.PyArray_DATA(word.point)
+                effective_words += 1
+                if effective_words == MAX_SENTENCE_LEN:
+                    break  # TODO: log warning, tally overflow?
+
+        #Unchanged
         # keep track of which words go into which sentence, so we don't train
         # across sentence boundaries.
         # indices of sentence number X are between <sentence_idx[X], sentence_idx[X])
@@ -488,9 +558,16 @@ def train_batch_cbow(model, sentences, alpha, _work, _neu1, compute_loss):
     # release GIL & train on all sentences
     with nogil:
         for sent_idx in range(effective_sentences):
+            #Unchanged
             idx_start = sentence_idx[sent_idx]
             idx_end = sentence_idx[sent_idx + 1]
+            pos = idx_start + context_pos[sent_idx]
             for i in range(idx_start, idx_end):
+                #Added
+                if contextOnly and i != pos: #for contextOnly, only train on target word
+                    continue
+               
+                #Unchanged
                 j = i - window + reduced_windows[i]
                 if j < idx_start:
                     j = idx_start

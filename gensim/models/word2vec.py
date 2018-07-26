@@ -180,6 +180,7 @@ except ImportError:
         This is the non-optimized, Python version. If you have cython installed, gensim
         will use the optimized version from word2vec_inner instead.
         """
+        #print('Entering unoptimized train_batch_cbow')
         result = 0
         for sentenceIndex in range(len(sentences)):
             sentence = sentences[sentenceIndex]
@@ -600,10 +601,10 @@ class Word2Vec(BaseWordEmbeddingsModel):
         work, neu1 = inits
         tally = 0
         if self.sg:
-            print('***Custom word2vec: skipgram')
+            #print('***Custom word2vec: skipgram')
             tally += train_batch_sg(self, sentences, alpha, work, self.compute_loss)
         else:
-            print('***Custom word2vec: CBOW')
+            #print('***Custom word2vec: CBOW')
             tally += train_batch_cbow(self, sentences, alpha, work, neu1, self.compute_loss)
         return tally, self._raw_word_count(sentences)
 

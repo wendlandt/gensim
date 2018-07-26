@@ -5,3 +5,6 @@ import sys
 sys.path.insert(0,'/home/wenlaura/gensim/')
 import gensim
 print(gensim.__file__)
+
+If you changed optimize code, before installing run this in models folder:
+cythonize -a -i word2vec_inner.pyx
