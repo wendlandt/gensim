@@ -10,6 +10,7 @@
 import cython
 import numpy as np
 cimport numpy as np
+import sys
 
 from libc.math cimport exp
 from libc.math cimport log
@@ -24,7 +25,7 @@ except ImportError:
 
 REAL = np.float32
 
-DEF MAX_SENTENCE_LEN = 10000
+DEF MAX_SENTENCE_LEN = 10000*11
 
 cdef scopy_ptr scopy=<scopy_ptr>PyCObject_AsVoidPtr(fblas.scopy._cpointer)  # y = x
 cdef saxpy_ptr saxpy=<saxpy_ptr>PyCObject_AsVoidPtr(fblas.saxpy._cpointer)  # y += alpha * x
@@ -483,7 +484,6 @@ def train_batch_cbow(model, sentences, alpha, _work, _neu1, compute_loss):
                     continue
                 if sample and word.sample_int < random_int32(&next_random):
                     continue
-                #print(token)
                 left_count += 1 #Alright, now we'll use this word
                 indexes[effective_words] = word.index
                 if hs:
@@ -496,30 +496,38 @@ def train_batch_cbow(model, sentences, alpha, _work, _neu1, compute_loss):
             context_pos[effective_sentences] = left_count
             
             #Now target word
-            #print(target)
             indexes[effective_words] = target_word.index
             if hs:
                 codelens[effective_words] = <int>len(target_word.code)
                 codes[effective_words] = <np.uint8_t *>np.PyArray_DATA(target_word.code)
                 points[effective_words] = <np.uint32_t *>np.PyArray_DATA(target_word.point)
             effective_words += 1
-
             #Now right context
             for token in sent[window+1:]:
                 if token == oow:
                     continue
                 word = vlookup[token] if token in vlookup else None
-                if word is None:
-                    continue
                 if sample and word.sample_int < random_int32(&next_random):
                     continue
-                #print(token)
                 #Alright, now we'll use this word
+                #print('effective_words')
+                #sys.stdout.flush()
+                #print(effective_words)
+                #sys.stdout.flush()
+                #print('MAX SENTENCE LEN',MAX_SENTENCE_LEN)
+                #sys.stdout.flush()
+                #indexes[effective_words] = 0
+                #print('1 marker')
+                #sys.stdout.flush()
                 indexes[effective_words] = word.index
+                #print('right before hs')
+                #sys.stdout.flush()
                 if hs:
+                    #print('hs')
                     codelens[effective_words] = <int>len(word.code)
                     codes[effective_words] = <np.uint8_t *>np.PyArray_DATA(word.code)
                     points[effective_words] = <np.uint32_t *>np.PyArray_DATA(word.point)
+                #print('ending hs')
                 effective_words += 1
 
             #print('position:',left_count)
